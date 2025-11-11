@@ -32,6 +32,21 @@ const els = {
   posChecks: Array.from(document.querySelectorAll('.pos')),
 };
 
+function getCssVar(name) {
+  // Stronger fallback; ensure hex color for THREE.Color
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name);
+  const s = (v || '').trim();
+  // Accept #rgb/#rrggbb or rgb()/hsl() strings; otherwise default
+  if (!s) return '#0f1318'; // dark blue-gray default
+  return s;
+}
+
+function safePoints(result) {
+  if (Array.isArray(result?.points)) return result.points;
+  if (Array.isArray(result)) return result;
+  return [];
+}
+
 let lastResult = null;
 let threeCtx = null;
 let statusRetryTimer = null;
