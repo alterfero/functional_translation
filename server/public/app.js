@@ -267,7 +267,7 @@ function drawChart(result) {
   const rangeY = maxY - minY;
   const rangeZ = maxZ - minZ;
   const maxRange = Math.max(rangeX, rangeY, rangeZ) || 1;
-  const scale = 2.4;
+  const scale = 5;
 
   const smallGeom = new THREE.SphereGeometry(0.055, 24, 24);
   const mediumGeom = new THREE.SphereGeometry(0.075, 28, 28);
@@ -275,14 +275,14 @@ function drawChart(result) {
 
   function createLabelSprite(text) {
     const canvas = document.createElement('canvas');
-    const padding = 28;
-    const fontSize = 96;
+    const padding = 1;
+    const fontSize = 36;
     const font = `${fontSize}px "Inter", "Segoe UI", sans-serif`;
     const ctx2d = canvas.getContext('2d');
     ctx2d.font = font;
     const textWidth = Math.ceil(ctx2d.measureText(text).width);
-    const width = textWidth + padding * 2;
-    const height = fontSize + padding * 1.4;
+    const width = textWidth + padding;
+    const height = fontSize + padding;
     canvas.width = width;
     canvas.height = Math.ceil(height);
 
@@ -290,7 +290,7 @@ function drawChart(result) {
     ctxFinal.font = font;
     ctxFinal.textBaseline = 'middle';
     ctxFinal.textAlign = 'left';
-    ctxFinal.fillStyle = 'rgba(15, 23, 42, 0.78)';
+    ctxFinal.fillStyle = 'rgba(15, 23, 42, 0.1)';
     ctxFinal.fillRect(0, 0, canvas.width, canvas.height);
     ctxFinal.fillStyle = '#f8fafc';
     ctxFinal.fillText(text, padding, canvas.height / 2);
