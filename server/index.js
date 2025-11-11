@@ -201,15 +201,24 @@ function topKSimilar(targetVec, k = DEFAULT_K, exclude = new Set()) {
 
 function makePCA(points) {
   // points: array of { id, label, vec: Float32Array }
-  const X = points.map(p => Array.from(p.vec));
-  const pca = new PCA(X, { center: true, scale: false });
-  const Y = pca.predict(X, { nComponents: 2 }).to2DArray();
-  const ev = pca.getExplainedVariance(); // fraction per component
-  for (let i = 0; i < points.length; i++) {
-    points[i].x = Y[i][0];
-    points[i].y = Y[i][1];
+  if (!points.length) {
+    return { points: [], explainedVariance: [] };
   }
-  return { points, explainedVariance: [ev[0] || 0, ev[1] || 0] };
+
+  const X = points.map(p => Array.from(p.vec));
+  const nDims = X[0].length || 0;
+  const components = Math.max(1, Math.min(3, nDims));
+  const pca = new PCA(X, { center: true, scale: false });
+  const Y = pca.predict(X, { nComponents: components }).to2DArray();
+  const ev = pca.getExplainedVariance(); // fraction per component
+
+  for (let i = 0; i < points.length; i++) {
+    points[i].x = Y[i][0] || 0;
+    points[i].y = Y[i][1] || 0;
+    points[i].z = Y[i][2] || 0;
+  }
+
+  return { points, explainedVariance: ev.slice(0, components) };
 }
 
 // --- Express app ---
@@ -301,6 +310,7 @@ app.post('/api/search', async (req, res) => {
 
     // assemble points for PCA
     const pPoints = [];
+    const seedLinks = [];
 
     // neighbors
     for (const n of neighbors) {
@@ -323,19 +333,58 @@ app.post('/api/search', async (req, res) => {
         const b = pairObjs[i].b;
         const aEmb = embs[2*i];
         const bEmb = embs[2*i + 1];
-        pPoints.push({ id: `seed:${a}`, label: a, kind: 'seedFrom', vec: aEmb });
-        pPoints.push({ id: `seed:${b}`, label: b, kind: 'seedTo',   vec: bEmb });
+        const fromId = `seed:${a}`;
+        const toId = `seed:${b}`;
+        pPoints.push({ id: fromId, label: a, kind: 'seedFrom', vec: aEmb });
+        pPoints.push({ id: toId,   label: b, kind: 'seedTo',   vec: bEmb });
+        seedLinks.push({
+          id: `pair:${i}`,
+          fromId,
+          toId,
+          fromLabel: a,
+          toLabel: b
+        });
       }
     }
 
     const { points, explainedVariance } = makePCA(pPoints);
+
+    const pointMap = new Map(points.map(p => [p.id, p]));
+    const enrichedSeedLinks = seedLinks.map(link => ({
+      id: link.id,
+      fromId: link.fromId,
+      toId: link.toId,
+      fromLabel: link.fromLabel,
+      toLabel: link.toLabel,
+      from: pointMap.has(link.fromId) ? {
+        x: pointMap.get(link.fromId).x,
+        y: pointMap.get(link.fromId).y,
+        z: pointMap.get(link.fromId).z || 0
+      } : null,
+      to: pointMap.has(link.toId) ? {
+        x: pointMap.get(link.toId).x,
+        y: pointMap.get(link.toId).y,
+        z: pointMap.get(link.toId).z || 0
+      } : null
+    }));
+
+    const neighborScoreMap = new Map(neighbors.map(n => [`neighbor:${n.word}`, n.score]));
 
     res.json({
       avgDelta: Array.from(avgDelta),
       targetEmbedding: Array.from(targetEmb),
       transformed: Array.from(transformed),
       neighbors: neighbors.map(n => ({ word: n.word, score: n.score })),
-      points: points.map(p => ({ id: p.id, label: p.label, kind: p.kind, x: p.x, y: p.y })),
+      points: points.map(p => ({
+        id: p.id,
+        label: p.label,
+        kind: p.kind,
+        x: p.x,
+        y: p.y,
+        z: p.z || 0,
+        score: neighborScoreMap.get(p.id) || null
+      })),
+      seedLinks: enrichedSeedLinks,
       explainedVariance,
       meta: {
         vocabSize: vocab.length,

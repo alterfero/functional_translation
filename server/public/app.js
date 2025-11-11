@@ -1,5 +1,20 @@
-const d3select = d3.select;
-const POS_CATS = ['Noun','Verb','Adjective','Adverb','Other'];
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+const KIND_COLOR_VARS = {
+  neighbor: '--neighbor',
+  target: '--target',
+  predicted: '--pred',
+  seedFrom: '--seedFrom',
+  seedTo: '--seedTo'
+};
+const KIND_LABELS = {
+  neighbor: 'Neighbor',
+  target: 'Target',
+  predicted: 'Predicted',
+  seedFrom: 'Seed (from)',
+  seedTo: 'Seed (to)'
+};
 
 const els = {
   status: document.getElementById('status'),
@@ -18,6 +33,7 @@ const els = {
 };
 
 let lastResult = null;
+let threeCtx = null;
 
 function parsePairs(text) {
   const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -41,27 +57,288 @@ function classifyPOS(word) {
 
 function posFilterActive() {
   const keeps = new Set(els.posChecks.filter(c => c.checked).map(c => c.value));
-  return (pos) => keeps.has(pos);
+  return pos => keeps.has(pos);
 }
 
-async function initStatus() {
-  const r = await fetch('/api/status').then(r => r.json());
-  els.status.textContent = `Model: ${r.model} • dim=${r.dim || '…'} • vocab=${r.vocabSize || 0}`;
+function getCssVar(name) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name);
+  return value && value.trim() ? value.trim() : '#ffffff';
 }
 
-async function rebuildCache() {
-  const contextTemplate = els.template.value.trim() || '{w}';
-  els.rebuildBtn.disabled = true;
-  els.status.textContent = 'Rebuilding cache… (first time takes a bit)';
-  try {
-    await fetch('/api/rebuild', { method: 'POST', headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ contextTemplate }) });
-    await initStatus();
-  } catch (e) {
-    console.error(e);
-    alert('Rebuild failed: ' + e);
-  } finally {
-    els.rebuildBtn.disabled = false;
+function ensureThreeContext() {
+  if (threeCtx) {
+    threeCtx.resize();
+    return threeCtx;
+  }
+
+  const container = els.chart;
+  container.innerHTML = '';
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  container.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(getCssVar('--surface'));
+
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+  camera.position.set(0, 0, 6);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.07;
+  controls.enablePan = false;
+  controls.minDistance = 2.4;
+  controls.maxDistance = 12;
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.45);
+  const keyLight = new THREE.DirectionalLight(0xffffff, 0.85);
+  keyLight.position.set(3, 4, 5);
+  const fill = new THREE.PointLight(0x60a5fa, 0.35, 12);
+  fill.position.set(-4, -3, -5);
+  scene.add(ambient, keyLight, fill);
+
+  const group = new THREE.Group();
+  scene.add(group);
+
+  const frameGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(4, 4, 4));
+  const frameMaterial = new THREE.LineBasicMaterial({ color: new THREE.Color(getCssVar('--frame')) });
+  const frame = new THREE.LineSegments(frameGeometry, frameMaterial);
+  scene.add(frame);
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'gl-tooltip';
+  container.appendChild(tooltip);
+
+  const emptyState = document.createElement('div');
+  emptyState.className = 'chart-empty';
+  emptyState.textContent = 'Run the translation to populate the 3D projection.';
+  container.appendChild(emptyState);
+
+  const ctx = {
+    container,
+    renderer,
+    scene,
+    camera,
+    controls,
+    group,
+    frame,
+    tooltip,
+    emptyState,
+    raycaster: new THREE.Raycaster(),
+    pointer: new THREE.Vector2(),
+    pickables: [],
+    hovered: null,
+    autoRotate: true,
+  };
+
+  function resize() {
+    const rect = container.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    renderer.setSize(rect.width, rect.height, false);
+    camera.aspect = rect.width / rect.height;
+    camera.updateProjectionMatrix();
+  }
+
+  ctx.resize = resize;
+  resize();
+  window.addEventListener('resize', resize);
+
+  controls.addEventListener('start', () => {
+    ctx.autoRotate = false;
+  });
+  controls.addEventListener('end', () => {
+    setTimeout(() => { ctx.autoRotate = true; }, 1200);
+  });
+
+  function animate() {
+    requestAnimationFrame(animate);
+    if (ctx.autoRotate) {
+      ctx.group.rotation.y += 0.0025;
+    }
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  function handlePointer(event) {
+    if (!ctx.pickables.length) {
+      tooltip.style.opacity = 0;
+      return;
+    }
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    ctx.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    ctx.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    ctx.raycaster.setFromCamera(ctx.pointer, camera);
+    const intersects = ctx.raycaster.intersectObjects(ctx.pickables, false);
+
+    if (intersects.length) {
+      const obj = intersects[0].object;
+      if (ctx.hovered && ctx.hovered !== obj) {
+        ctx.hovered.scale.setScalar(ctx.hovered.userData.baseScale || 1);
+      }
+      ctx.hovered = obj;
+      const baseScale = obj.userData.baseScale || obj.scale.x;
+      obj.userData.baseScale = baseScale;
+      obj.scale.setScalar(baseScale * 1.35);
+
+      const { label, kind, score } = obj.userData;
+      const kindLabel = KIND_LABELS[kind] || kind;
+      let html = `<strong>${label}</strong><br/><span class="badge">${kindLabel}</span>`;
+      if (typeof score === 'number') {
+        html += `<div>cosine: ${score.toFixed(4)}</div>`;
+      }
+      tooltip.innerHTML = html;
+
+      const cx = event.clientX - rect.left;
+      const cy = event.clientY - rect.top;
+      tooltip.style.left = `${cx}px`;
+      tooltip.style.top = `${cy}px`;
+      tooltip.style.opacity = 1;
+    } else {
+      if (ctx.hovered) {
+        ctx.hovered.scale.setScalar(ctx.hovered.userData.baseScale || 1);
+        ctx.hovered = null;
+      }
+      tooltip.style.opacity = 0;
+    }
+  }
+
+  renderer.domElement.addEventListener('pointermove', handlePointer);
+  renderer.domElement.addEventListener('pointerleave', () => {
+    if (ctx.hovered) {
+      ctx.hovered.scale.setScalar(ctx.hovered.userData.baseScale || 1);
+      ctx.hovered = null;
+    }
+    tooltip.style.opacity = 0;
+  });
+
+  threeCtx = ctx;
+  return ctx;
+}
+
+function drawChart(result) {
+  const ctx = ensureThreeContext();
+  ctx.resize();
+
+  const keep = posFilterActive();
+  const filteredPoints = result.points.filter(p => {
+    if (p.kind !== 'neighbor') return true;
+    const pos = classifyPOS(p.label);
+    return keep(pos);
+  });
+
+  ctx.tooltip.style.opacity = 0;
+  ctx.hovered = null;
+
+  while (ctx.group.children.length) ctx.group.remove(ctx.group.children[0]);
+  ctx.group.rotation.set(-0.35, 0, 0);
+  ctx.pickables = [];
+
+  if (ctx.scene.background instanceof THREE.Color) {
+    ctx.scene.background.set(getCssVar('--surface'));
+  } else {
+    ctx.scene.background = new THREE.Color(getCssVar('--surface'));
+  }
+  ctx.frame.material.color.set(getCssVar('--frame'));
+
+  if (!filteredPoints.length) {
+    ctx.emptyState.style.opacity = 1;
+    return;
+  }
+  ctx.emptyState.style.opacity = 0;
+
+  const xs = filteredPoints.map(p => p.x);
+  const ys = filteredPoints.map(p => p.y);
+  const zs = filteredPoints.map(p => p.z || 0);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const minZ = Math.min(...zs);
+  const maxZ = Math.max(...zs);
+
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const centerZ = (minZ + maxZ) / 2;
+  const rangeX = maxX - minX;
+  const rangeY = maxY - minY;
+  const rangeZ = maxZ - minZ;
+  const maxRange = Math.max(rangeX, rangeY, rangeZ) || 1;
+  const scale = 1.8;
+
+  const smallGeom = new THREE.SphereGeometry(0.075, 24, 24);
+  const mediumGeom = new THREE.SphereGeometry(0.095, 28, 28);
+  const largeGeom = new THREE.SphereGeometry(0.12, 32, 32);
+
+  const idToObj = new Map();
+  const pickables = [];
+
+  filteredPoints.forEach(p => {
+    const colorVar = KIND_COLOR_VARS[p.kind] || '--neighbor';
+    const color = new THREE.Color(getCssVar(colorVar));
+    const geometry = p.kind === 'neighbor' ? smallGeom : (p.kind === 'predicted' ? largeGeom : mediumGeom);
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color.clone().multiplyScalar(0.25),
+      metalness: 0.2,
+      roughness: 0.35
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(
+      ((p.x - centerX) / maxRange) * scale,
+      ((p.y - centerY) / maxRange) * scale,
+      ((p.z - centerZ) / maxRange) * scale
+    );
+
+    const baseScale = p.kind === 'neighbor' ? 0.95 : (p.kind === 'predicted' ? 1.45 : 1.15);
+    mesh.scale.setScalar(baseScale);
+    mesh.userData = {
+      label: p.label,
+      kind: p.kind,
+      score: typeof p.score === 'number' ? p.score : null,
+      baseScale
+    };
+
+    ctx.group.add(mesh);
+    pickables.push(mesh);
+    idToObj.set(p.id, { mesh, position: mesh.position.clone() });
+  });
+
+  ctx.pickables = pickables;
+
+  const seedColor = new THREE.Color(getCssVar('--seedVector'));
+  (result.seedLinks || []).forEach(link => {
+    const from = idToObj.get(link.fromId);
+    const to = idToObj.get(link.toId);
+    if (!from || !to) return;
+    const dir = new THREE.Vector3().subVectors(to.position, from.position);
+    const length = dir.length();
+    if (!length) return;
+    const arrow = new THREE.ArrowHelper(dir.clone().normalize(), from.position, length, seedColor.getHex(), 0.14, 0.1);
+    arrow.line.material.transparent = true;
+    arrow.line.material.opacity = 0.75;
+    arrow.cone.material.transparent = true;
+    arrow.cone.material.opacity = 0.85;
+    ctx.group.add(arrow);
+  });
+
+  const target = idToObj.get('target');
+  const predicted = idToObj.get('predicted');
+  if (target && predicted) {
+    const arrowColor = new THREE.Color(getCssVar('--pred'));
+    const dir = new THREE.Vector3().subVectors(predicted.position, target.position);
+    const length = dir.length();
+    if (length) {
+      const arrow = new THREE.ArrowHelper(dir.clone().normalize(), target.position, length, arrowColor.getHex(), 0.2, 0.14);
+      arrow.line.material.transparent = true;
+      arrow.line.material.opacity = 0.95;
+      arrow.cone.material.transparent = true;
+      arrow.cone.material.opacity = 0.95;
+      ctx.group.add(arrow);
+    }
   }
 }
 
@@ -74,115 +351,33 @@ function renderNeighborsTable(neighbors) {
   els.tableBody.innerHTML = '';
   rows.forEach((n, i) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${i+1}</td><td>${n.word}</td><td>${n.score.toFixed(4)}</td><td><span class="badge">${n.pos}</span></td>`;
+    tr.innerHTML = `<td>${i + 1}</td><td>${n.word}</td><td>${n.score.toFixed(4)}</td><td><span class="badge">${n.pos}</span></td>`;
     els.tableBody.appendChild(tr);
   });
 }
 
-function drawChart(points) {
-  const keep = posFilterActive();
+async function initStatus() {
+  const r = await fetch('/api/status').then(res => res.json());
+  els.status.textContent = `Model: ${r.model} • dim=${r.dim || '…'} • vocab=${r.vocabSize || 0}`;
+}
 
-  const w = els.chart.clientWidth - 20;
-  const h = els.chart.clientHeight - 20;
-  els.chart.innerHTML = '';
-
-  const svg = d3select(els.chart).append('svg')
-    .attr('width', w).attr('height', h)
-    .style('border-radius', '10px');
-
-  const margin = { top: 16, right: 16, bottom: 24, left: 24 };
-  const innerW = w - margin.left - margin.right;
-  const innerH = h - margin.top - margin.bottom;
-
-  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
-
-  const xs = points.map(p => p.x), ys = points.map(p => p.y);
-  const x = d3.scaleLinear().domain(d3.extent(xs)).nice().range([0, innerW]);
-  const y = d3.scaleLinear().domain(d3.extent(ys)).nice().range([innerH, 0]);
-
-  const xAxis = g.append('g').attr('transform', `translate(0,${innerH})`).call(d3.axisBottom(x).ticks(6));
-  const yAxis = g.append('g').call(d3.axisLeft(y).ticks(6));
-
-  const zoom = d3.zoom().scaleExtent([0.5, 10]).on('zoom', (event) => {
-    const t = event.transform;
-    const zx = t.rescaleX(x);
-    const zy = t.rescaleY(y);
-    pointsSel.attr('cx', d => zx(d.x)).attr('cy', d => zy(d.y));
-    labels.attr('x', d => zx(d.x) + 8).attr('y', d => zy(d.y) + 4);
-    arrow.attr('d', arrowPath(zx, zy));
-    xAxis.call(d3.axisBottom(zx).ticks(6));
-    yAxis.call(d3.axisLeft(zy).ticks(6));
-  });
-  svg.call(zoom);
-
-  // Tooltip
-  const tooltip = d3select(els.chart).append('div').attr('class','tooltip').style('opacity',0);
-
-  function color(d) {
-    switch (d.kind) {
-      case 'neighbor': return getComputedStyle(document.documentElement).getPropertyValue('--neighbor');
-      case 'target': return getComputedStyle(document.documentElement).getPropertyValue('--target');
-      case 'predicted': return getComputedStyle(document.documentElement).getPropertyValue('--pred');
-      case 'seedFrom': return getComputedStyle(document.documentElement).getPropertyValue('--seedFrom');
-      case 'seedTo': return getComputedStyle(document.documentElement).getPropertyValue('--seedTo');
-      default: return '#ccc';
-    }
+async function rebuildCache() {
+  const contextTemplate = els.template.value.trim() || '{w}';
+  els.rebuildBtn.disabled = true;
+  els.status.textContent = 'Rebuilding cache… (first time takes a bit)';
+  try {
+    await fetch('/api/rebuild', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contextTemplate })
+    });
+    await initStatus();
+  } catch (e) {
+    console.error(e);
+    alert('Rebuild failed: ' + e);
+  } finally {
+    els.rebuildBtn.disabled = false;
   }
-
-  const filtered = points.filter(p => {
-    if (p.kind !== 'neighbor') return true; // always keep special points
-    const pos = classifyPOS(p.label);
-    return keep(pos);
-  });
-
-  const pointsSel = g.selectAll('circle.point')
-    .data(filtered)
-    .enter()
-    .append('circle')
-    .attr('class','point')
-    .attr('r', d => (d.kind === 'neighbor' ? 3.5 : 5.5))
-    .attr('cx', d => x(d.x))
-    .attr('cy', d => y(d.y))
-    .attr('fill', d => color(d))
-    .attr('opacity', d => (d.kind === 'neighbor' ? 0.85 : 1))
-    .on('mousemove', (event, d) => {
-      tooltip.style('opacity', 1)
-        .style('left', (event.offsetX + 12) + 'px')
-        .style('top',  (event.offsetY - 10) + 'px')
-        .html(`<b>${d.label}</b><br><span class="badge">${d.kind}</span>`);
-    })
-    .on('mouseleave', () => tooltip.style('opacity', 0));
-
-  const labels = g.selectAll('text.label')
-    .data(filtered.filter(d => d.kind !== 'neighbor')) // label special points
-    .enter().append('text')
-    .attr('x', d => x(d.x) + 8)
-    .attr('y', d => y(d.y) + 4)
-    .attr('fill', '#d8dee9')
-    .attr('font-size', 12)
-    .text(d => d.label);
-
-  // Arrow from target to predicted
-  const target = points.find(p => p.kind === 'target');
-  const pred = points.find(p => p.kind === 'predicted');
-  const arrowPath = (sx, sy) => {
-    if (!target || !pred) return '';
-    return `M ${sx(target.x)} ${sy(target.y)} L ${sx(pred.x)} ${sy(pred.y)}`;
-  };
-  const marker = svg.append('defs').append('marker')
-    .attr('id', 'arrowhead')
-    .attr('viewBox', '0 0 10 10')
-    .attr('refX', 10).attr('refY', 5)
-    .attr('markerWidth', 6).attr('markerHeight', 6)
-    .attr('orient', 'auto-start-reverse')
-    .append('path').attr('d', 'M 0 0 L 10 5 L 0 10 z').attr('fill', getComputedStyle(document.documentElement).getPropertyValue('--pred'));
-
-  const arrow = g.append('path')
-    .attr('d', arrowPath(x, y))
-    .attr('stroke', getComputedStyle(document.documentElement).getPropertyValue('--pred'))
-    .attr('stroke-width', 2)
-    .attr('fill', 'none')
-    .attr('marker-end', 'url(#arrowhead)');
 }
 
 async function runSearch() {
@@ -202,18 +397,23 @@ async function runSearch() {
   els.runBtn.disabled = true;
   els.status.textContent = 'Running…';
   try {
-    const r = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    const json = await r.json();
+    const resp = await fetch('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const json = await resp.json();
     if (json.error) throw new Error(json.error);
     lastResult = json;
 
-    // POS filter reacts live
     renderNeighborsTable(json.neighbors);
-    drawChart(json.points);
+    drawChart(json);
 
-    const p1 = (json.explainedVariance[0] * 100).toFixed(1);
-    const p2 = (json.explainedVariance[1] * 100).toFixed(1);
-    els.status.textContent = `k=${json.meta.k} • vocab=${json.meta.vocabSize} • PCA var: PC1 ${p1}% / PC2 ${p2}%`;
+    const pcsRaw = json.explainedVariance || [];
+    const pcs = pcsRaw.length
+      ? pcsRaw.map((v, i) => `PC${i + 1} ${(v * 100).toFixed(1)}%`).join(' / ')
+      : 'n/a';
+    els.status.textContent = `k=${json.meta.k} • vocab=${json.meta.vocabSize} • PCA var: ${pcs}`;
   } catch (e) {
     console.error(e);
     alert('Search failed: ' + e.message);
@@ -224,14 +424,17 @@ async function runSearch() {
 }
 
 // UI wiring
-els.k.addEventListener('input', () => els.kVal.textContent = els.k.value);
+els.k.addEventListener('input', () => {
+  els.kVal.textContent = els.k.value;
+});
 els.runBtn.addEventListener('click', runSearch);
 els.rebuildBtn.addEventListener('click', rebuildCache);
 els.posChecks.forEach(cb => cb.addEventListener('change', () => {
   if (!lastResult) return;
   renderNeighborsTable(lastResult.neighbors);
-  drawChart(lastResult.points);
+  drawChart(lastResult);
 }));
 
 // boot
 initStatus();
+ensureThreeContext();
