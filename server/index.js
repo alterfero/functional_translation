@@ -71,7 +71,6 @@ async function ensureEmbedder() {
 }
 
 async function embedMany(texts) {
-async function embedMany(texts) {
   const pipe = await ensureEmbedder();
   const out = await pipe(texts, { pooling: 'mean', normalize: true });
 
@@ -106,7 +105,6 @@ async function embedMany(texts) {
     res[i] = vec.subarray(i * dim, (i + 1) * dim);
   }
   return res;
-}
 }
 
 async function loadVocab() {
