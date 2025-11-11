@@ -300,13 +300,16 @@ app.post('/api/search', async (req, res) => {
     for (const d of deltas) for (let j = 0; j < dim; j++) avgDelta[j] += d[j];
     if (deltas.length > 0) for (let j = 0; j < dim; j++) avgDelta[j] /= deltas.length;
 
-    // transformed target vector
+    // transformed target vector (raw sum of target + delta)
     const transformed = new Float32Array(dim);
     for (let j = 0; j < dim; j++) transformed[j] = targetEmb[j] + avgDelta[j];
 
-    // knn among vocab
+    // cosine similarity works on unit vectors, so align the translated target
+    const translated = normalized ? normalizeVec(transformed) : transformed;
+
+    // knn among vocab using the translated target vector
     const excludeSet = new Set(excludeInputs ? [...pairs.flat(), target] : []);
-    const neighbors = topKSimilar(transformed, k, excludeSet);
+    const neighbors = topKSimilar(translated, k, excludeSet);
 
     // assemble points for PCA
     const pPoints = [];
@@ -324,7 +327,7 @@ app.post('/api/search', async (req, res) => {
 
     // target & predicted
     pPoints.push({ id: 'target', label: target, kind: 'target', vec: targetEmb });
-    pPoints.push({ id: 'predicted', label: `${target}*`, kind: 'predicted', vec: transformed });
+    pPoints.push({ id: 'predicted', label: `${target}*`, kind: 'predicted', vec: translated });
 
     // seeds
     if (includeSeeds) {
@@ -373,7 +376,8 @@ app.post('/api/search', async (req, res) => {
     res.json({
       avgDelta: Array.from(avgDelta),
       targetEmbedding: Array.from(targetEmb),
-      transformed: Array.from(transformed),
+      transformed: Array.from(translated),
+      transformedRaw: Array.from(transformed),
       neighbors: neighbors.map(n => ({ word: n.word, score: n.score })),
       points: points.map(p => ({
         id: p.id,
