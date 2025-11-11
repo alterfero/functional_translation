@@ -263,8 +263,7 @@ app.post('/api/search', async (req, res) => {
       target = 'work',
       k = DEFAULT_K,
       contextTemplate = '{w}',
-      includeSeeds = true,
-      excludeInputs = true
+      includeSeeds = true
     } = req.body || {};
 
     if (!matrix) {
@@ -308,7 +307,7 @@ app.post('/api/search', async (req, res) => {
     const translated = normalized ? normalizeVec(transformed) : transformed;
 
     // knn among vocab using the translated target vector
-    const excludeSet = new Set(excludeInputs ? [...pairs.flat(), target] : []);
+    const excludeSet = new Set([...pairs.flat(), target]);
     const neighbors = topKSimilar(translated, k, excludeSet);
 
     // assemble points for PCA

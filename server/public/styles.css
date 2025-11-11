@@ -335,6 +335,65 @@ section.results h2 {
   font-size: 1.5rem;
 }
 
+.summary-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 2fr) repeat(auto-fit, minmax(200px, 1fr));
+  align-items: stretch;
+  margin-bottom: 36px;
+}
+
+.summary-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow);
+}
+
+.summary-card h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.summary-card p {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.summary-card.small-card {
+  justify-content: space-between;
+  min-height: 100%;
+}
+
+#seedPairsTable {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+#seedPairsTable th,
+#seedPairsTable td {
+  font-size: 0.92rem;
+}
+
+#seedPairsTable td:last-child {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--muted);
+}
+
+#seedPairsTable td[colspan="3"] {
+  text-align: center;
+  color: var(--muted);
+}
+
+#seedPairsTable tbody tr:nth-child(even) {
+  background: rgba(148, 163, 184, 0.05);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -403,5 +462,9 @@ footer {
 
   #legend {
     gap: 12px;
+  }
+
+  .summary-grid {
+    grid-template-columns: 1fr;
   }
 }

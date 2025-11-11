@@ -24,17 +24,22 @@ const els = {
   kVal: document.getElementById('kVal'),
   template: document.getElementById('template'),
   includeSeeds: document.getElementById('includeSeeds'),
-  excludeInputs: document.getElementById('excludeInputs'),
   runBtn: document.getElementById('runBtn'),
   rebuildBtn: document.getElementById('rebuildBtn'),
   chart: document.getElementById('chart'),
   tableBody: document.querySelector('#neighborsTable tbody'),
+  seedPairsBody: document.getElementById('seedPairsBody'),
+  targetWordDisplay: document.getElementById('targetWord'),
+  translatedWordDisplay: document.getElementById('translatedWord'),
+  neighborsHeading: document.getElementById('neighborsHeading'),
   posChecks: Array.from(document.querySelectorAll('.pos')),
 };
 
 let lastResult = null;
 let threeCtx = null;
 let statusRetryTimer = null;
+let lastTargetWord = '';
+let lastNeighbors = [];
 
 function parsePairs(text) {
   const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -59,6 +64,48 @@ function classifyPOS(word) {
 function posFilterActive() {
   const keeps = new Set(els.posChecks.filter(c => c.checked).map(c => c.value));
   return pos => keeps.has(pos);
+}
+
+function renderSeedPairs(pairs) {
+  els.seedPairsBody.innerHTML = '';
+
+  if (!pairs.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 3;
+    td.textContent = 'No seed pairs provided.';
+    tr.appendChild(td);
+    els.seedPairsBody.appendChild(tr);
+    return;
+  }
+
+  pairs.forEach(([from, to]) => {
+    const tr = document.createElement('tr');
+
+    const tdFrom = document.createElement('td');
+    tdFrom.textContent = from;
+    const tdTo = document.createElement('td');
+    tdTo.textContent = to;
+    const tdVector = document.createElement('td');
+    tdVector.textContent = `${from} → ${to}`;
+
+    tr.append(tdFrom, tdTo, tdVector);
+    els.seedPairsBody.appendChild(tr);
+  });
+}
+
+function updateSummary(targetWord, neighbors) {
+  els.targetWordDisplay.textContent = targetWord || '—';
+
+  let translated = '—';
+  if (Array.isArray(neighbors) && neighbors.length) {
+    translated = neighbors[0].word;
+  }
+
+  els.translatedWordDisplay.textContent = translated;
+  els.neighborsHeading.textContent = translated !== '—'
+    ? `Translated target neighbors (${translated})`
+    : 'Translated target neighbors';
 }
 
 function getCssVar(name) {
@@ -389,12 +436,23 @@ function drawChart(result) {
 }
 
 function renderNeighborsTable(neighbors) {
+  const list = Array.isArray(neighbors) ? neighbors : [];
   const keep = posFilterActive();
-  const rows = neighbors
-    .map((n, i) => ({ ...n, pos: classifyPOS(n.word) }))
+  const rows = list
+    .map(n => ({ ...n, pos: classifyPOS(n.word) }))
     .filter(n => keep(n.pos));
 
   els.tableBody.innerHTML = '';
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 4;
+    td.textContent = 'No neighbors match the current filters.';
+    tr.appendChild(td);
+    els.tableBody.appendChild(tr);
+    return;
+  }
+
   rows.forEach((n, i) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${i + 1}</td><td>${n.word}</td><td>${n.score.toFixed(4)}</td><td><span class="badge">${n.pos}</span></td>`;
@@ -448,6 +506,10 @@ async function rebuildCache() {
 async function runSearch() {
   const pairs = parsePairs(els.pairs.value);
   if (!pairs.length) {
+    renderSeedPairs([]);
+    lastTargetWord = '';
+    lastNeighbors = [];
+    updateSummary('', []);
     alert('Please provide at least one valid pair.');
     return;
   }
@@ -456,9 +518,12 @@ async function runSearch() {
     target: els.target.value.trim(),
     k: Number(els.k.value),
     contextTemplate: els.template.value.trim() || '{w}',
-    includeSeeds: els.includeSeeds.checked,
-    excludeInputs: els.excludeInputs.checked
+    includeSeeds: els.includeSeeds.checked
   };
+  renderSeedPairs(pairs);
+  lastTargetWord = body.target;
+  lastNeighbors = [];
+  updateSummary(body.target, []);
   els.runBtn.disabled = true;
   els.status.textContent = 'Running…';
   try {
@@ -470,9 +535,12 @@ async function runSearch() {
     const json = await resp.json();
     if (json.error) throw new Error(json.error);
     lastResult = json;
+    lastTargetWord = body.target;
+    lastNeighbors = json.neighbors || [];
 
     renderNeighborsTable(json.neighbors);
     drawChart(json);
+    updateSummary(body.target, json.neighbors);
 
     const pcsRaw = json.explainedVariance || [];
     const pcs = pcsRaw.length
@@ -501,5 +569,9 @@ els.posChecks.forEach(cb => cb.addEventListener('change', () => {
 }));
 
 // boot
+renderSeedPairs(parsePairs(els.pairs.value));
+lastTargetWord = els.target.value.trim();
+lastNeighbors = [];
+updateSummary(lastTargetWord, []);
 initStatus();
 ensureThreeContext();

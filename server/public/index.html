@@ -49,7 +49,6 @@ write, writing</textarea>
           <small>Use <code>{w}</code> where the word goes. Example: “I saw {w} yesterday.”</small>
         </div>
         <div class="checkboxes">
-          <label><input id="excludeInputs" type="checkbox" checked /> Exclude input words from neighbors</label>
           <label><input id="includeSeeds" type="checkbox" checked /> Plot seed words</label>
         </div>
       </div>
@@ -87,7 +86,25 @@ write, writing</textarea>
   </section>
 
   <section class="results">
-    <h2>Top neighbors</h2>
+    <div class="summary-grid">
+      <div class="summary-card seed-card">
+        <h2>Seed pairs</h2>
+        <table id="seedPairsTable">
+          <thead><tr><th>From</th><th>To</th><th>Vector</th></tr></thead>
+          <tbody id="seedPairsBody"></tbody>
+        </table>
+      </div>
+      <div class="summary-card small-card">
+        <h2>Target word</h2>
+        <p id="targetWord">—</p>
+      </div>
+      <div class="summary-card small-card">
+        <h2>Translated target</h2>
+        <p id="translatedWord">—</p>
+      </div>
+    </div>
+
+    <h2 id="neighborsHeading">Translated target neighbors</h2>
     <table id="neighborsTable">
       <thead><tr><th>#</th><th>Word</th><th>Score (cosine)</th><th>POS</th></tr></thead>
       <tbody></tbody>
