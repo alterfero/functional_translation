@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Functional Translations — Vector Playground</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>">
+  <!-- D3 + compromise (POS tagger) from CDNs -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/compromise@14.13.0/builds/compromise.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Functional Translations — Vector Playground</h1>
+    <div id="status">Loading…</div>
+  </header>
+
+  <section class="controls">
+    <div class="panel">
+      <label>Seed pairs (one per line, comma or → separated):</label>
+      <textarea id="pairs" rows="8">garden, gardening
+belief, believing
+fight, fighting
+run, running
+write, writing</textarea>
+
+      <div class="grid2">
+        <div>
+          <label>Target word:</label>
+          <input id="target" value="work" />
+        </div>
+        <div>
+          <label>Neighbors (k): <span id="kVal">200</span></label>
+          <input id="k" type="range" min="20" max="400" value="200" />
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <label>Context template (optional)</label>
+          <input id="template" placeholder="{w}" />
+          <small>Use <code>{w}</code> where the word goes. Example: “I saw {w} yesterday.”</small>
+        </div>
+        <div class="checkboxes">
+          <label><input id="excludeInputs" type="checkbox" checked /> Exclude input words from neighbors</label>
+          <label><input id="includeSeeds" type="checkbox" checked /> Plot seed words</label>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="runBtn">Run translation</button>
+        <button id="rebuildBtn" class="ghost">Rebuild cache</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <label>Filter by Part of Speech</label>
+      <div class="checkboxes">
+        <label><input type="checkbox" class="pos" value="Noun" checked /> Nouns</label>
+        <label><input type="checkbox" class="pos" value="Verb" checked /> Verbs</label>
+        <label><input type="checkbox" class="pos" value="Adjective" checked /> Adjectives</label>
+        <label><input type="checkbox" class="pos" value="Adverb" checked /> Adverbs</label>
+        <label><input type="checkbox" class="pos" value="Other" checked /> Other</label>
+      </div>
+      <small>POS is heuristic (single-word guess via compromise.js).</small>
+    </div>
+  </section>
+
+  <section class="viz">
+    <div id="chart"></div>
+    <div id="legend">
+      <span class="dot neighbor"></span> Neighbors
+      <span class="dot target"></span> Target
+      <span class="dot predicted"></span> Predicted
+      <span class="dot seedFrom"></span> Seed from
+      <span class="dot seedTo"></span> Seed to
+    </div>
+  </section>
+
+  <section class="results">
+    <h2>Top neighbors</h2>
+    <table id="neighborsTable">
+      <thead><tr><th>#</th><th>Word</th><th>Score (cosine)</th><th>POS</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <footer>
+    <small>Model: MiniLM-L6-v2 (Xenova). First run downloads model & builds vocab cache.</small>
+  </footer>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
