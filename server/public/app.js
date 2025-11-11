@@ -30,10 +30,47 @@ const els = {
   chart: document.getElementById('chart'),
   tableBody: document.querySelector('#neighborsTable tbody'),
   posChecks: Array.from(document.querySelectorAll('.pos')),
+  runFeedback: document.getElementById('runFeedback'),
+  rebuildFeedback: document.getElementById('rebuildFeedback'),
 };
 
 let lastResult = null;
 let threeCtx = null;
+let statusRetryTimer = null;
+
+function setButtonBusy(button, busy, busyLabel = 'Working…') {
+  if (!button) return;
+  if (!button.dataset.defaultLabel) {
+    button.dataset.defaultLabel = button.textContent;
+  }
+  if (busy) {
+    button.disabled = true;
+    button.textContent = busyLabel;
+    button.classList.add('is-loading');
+  } else {
+    button.disabled = false;
+    button.textContent = button.dataset.defaultLabel;
+    button.classList.remove('is-loading');
+  }
+}
+
+function formatDuration(ms) {
+  if (!ms || Number.isNaN(ms)) return '';
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)} s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.round((ms % 60000) / 1000);
+  return `${minutes}m ${seconds}s`;
+}
+
+function updateFeedback(el, state, message = '') {
+  if (!el) return;
+  el.textContent = message;
+  el.classList.remove('busy', 'success', 'error');
+  if (state) {
+    el.classList.add(state);
+  }
+}
 
 function parsePairs(text) {
   const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -356,15 +393,36 @@ function renderNeighborsTable(neighbors) {
   });
 }
 
-async function initStatus() {
-  const r = await fetch('/api/status').then(res => res.json());
-  els.status.textContent = `Model: ${r.model} • dim=${r.dim || '…'} • vocab=${r.vocabSize || 0}`;
+async function initStatus({ retry = true } = {}) {
+  if (statusRetryTimer) {
+    clearTimeout(statusRetryTimer);
+    statusRetryTimer = null;
+  }
+
+  try {
+    const resp = await fetch('/api/status');
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const r = await resp.json();
+    els.status.textContent = `Model: ${r.model} • dim=${r.dim || '…'} • vocab=${r.vocabSize || 0}`;
+    return true;
+  } catch (err) {
+    console.error('Status check failed:', err);
+    els.status.textContent = 'Waiting for server…';
+    if (retry) {
+      statusRetryTimer = setTimeout(() => initStatus({ retry: true }), 2000);
+    }
+    return false;
+  }
 }
 
 async function rebuildCache() {
   const contextTemplate = els.template.value.trim() || '{w}';
-  els.rebuildBtn.disabled = true;
+  const started = performance.now();
+  setButtonBusy(els.rebuildBtn, true, 'Rebuilding…');
   els.status.textContent = 'Rebuilding cache… (first time takes a bit)';
+  updateFeedback(els.rebuildFeedback, 'busy', 'Rebuilding cache — this can take a minute.');
   try {
     await fetch('/api/rebuild', {
       method: 'POST',
@@ -372,11 +430,15 @@ async function rebuildCache() {
       body: JSON.stringify({ contextTemplate })
     });
     await initStatus();
+    const elapsed = performance.now() - started;
+    updateFeedback(els.rebuildFeedback, 'success', `Cache rebuilt in ${formatDuration(elapsed)}.`);
   } catch (e) {
     console.error(e);
     alert('Rebuild failed: ' + e);
+    const elapsed = performance.now() - started;
+    updateFeedback(els.rebuildFeedback, 'error', `Rebuild failed after ${formatDuration(elapsed)}. ${e.message || e}`);
   } finally {
-    els.rebuildBtn.disabled = false;
+    setButtonBusy(els.rebuildBtn, false);
   }
 }
 
@@ -384,6 +446,7 @@ async function runSearch() {
   const pairs = parsePairs(els.pairs.value);
   if (!pairs.length) {
     alert('Please provide at least one valid pair.');
+    updateFeedback(els.runFeedback, 'error', 'Add at least one valid seed pair before running the translation.');
     return;
   }
   const body = {
@@ -394,8 +457,10 @@ async function runSearch() {
     includeSeeds: els.includeSeeds.checked,
     excludeInputs: els.excludeInputs.checked
   };
-  els.runBtn.disabled = true;
+  const started = performance.now();
+  setButtonBusy(els.runBtn, true, 'Running…');
   els.status.textContent = 'Running…';
+  updateFeedback(els.runFeedback, 'busy', 'Translation running — fetching nearest neighbors.');
   try {
     const resp = await fetch('/api/search', {
       method: 'POST',
@@ -414,12 +479,20 @@ async function runSearch() {
       ? pcsRaw.map((v, i) => `PC${i + 1} ${(v * 100).toFixed(1)}%`).join(' / ')
       : 'n/a';
     els.status.textContent = `k=${json.meta.k} • vocab=${json.meta.vocabSize} • PCA var: ${pcs}`;
+    const elapsed = performance.now() - started;
+    updateFeedback(
+      els.runFeedback,
+      'success',
+      `Translation ready in ${formatDuration(elapsed)} — showing ${json.neighbors.length} neighbors.`
+    );
   } catch (e) {
     console.error(e);
     alert('Search failed: ' + e.message);
     els.status.textContent = 'Error.';
+    const elapsed = performance.now() - started;
+    updateFeedback(els.runFeedback, 'error', `Translation failed after ${formatDuration(elapsed)}. ${e.message}`);
   } finally {
-    els.runBtn.disabled = false;
+    setButtonBusy(els.runBtn, false);
   }
 }
 
