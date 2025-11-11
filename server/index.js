@@ -71,17 +71,42 @@ async function ensureEmbedder() {
 }
 
 async function embedMany(texts) {
+async function embedMany(texts) {
   const pipe = await ensureEmbedder();
-  // @xenova/transformers supports batching arrays of strings.
   const out = await pipe(texts, { pooling: 'mean', normalize: true });
-  // Return an array of Float32Array vectors (1D each)
-  const to1D = (x) => {
-    if (x && x.data && x.data.length) return Float32Array.from(x.data);
+
+  const toVec = (x) => {
+    if (x?.data) return (x.data instanceof Float32Array) ? x.data : Float32Array.from(x.data);
+    if (x instanceof Float32Array) return x;
     if (Array.isArray(x)) return Float32Array.from(x);
-    throw new Error('Unexpected embedding output');
+    return null;
   };
-  if (Array.isArray(out)) return out.map(to1D);
-  return [to1D(out)];
+
+  // Case 1: pipeline already returns an array of per-item outputs
+  if (Array.isArray(out)) {
+    const vecs = out.map(toVec);
+    if (vecs.some(v => v == null)) throw new Error('Unexpected embedding output (array case)');
+    return vecs;
+  }
+
+  // Case 2: single object / tensor with concatenated data → split by `dim`
+  const vec = toVec(out);
+  if (!vec) throw new Error('Unexpected embedding output (tensor case)');
+  if (!dim) throw new Error('Embedding dimension not initialized');
+
+  const n = Math.round(vec.length / dim);
+  if (n * dim !== vec.length) {
+    // Fallback: treat as single vector
+    return [vec];
+  }
+  if (n === 1) return [vec];
+
+  const res = new Array(n);
+  for (let i = 0; i < n; i++) {
+    res[i] = vec.subarray(i * dim, (i + 1) * dim);
+  }
+  return res;
+}
 }
 
 async function loadVocab() {
@@ -119,7 +144,8 @@ async function buildOrLoadEmbeddingMatrix(contextTemplate = '{w}') {
     const meta = JSON.parse(await fs.readFile(metaPath, 'utf8'));
     if (meta.signature === signature) {
       const buf = await fs.readFile(binPath);
-      matrix = new Float32Array(new Uint8Array(buf).buffer);
+      const u8 = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+      matrix = new Float32Array(u8.buffer, u8.byteOffset, u8.byteLength / 4);
       dim = meta.dim;
       normalized = meta.normalized;
       console.log(`[cache] loaded matrix n=${meta.n} dim=${dim} normalized=${normalized}`);
