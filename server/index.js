@@ -219,16 +219,31 @@ function topKSimilar(targetVec, k = DEFAULT_K, exclude = new Set()) {
 
 function makePCA(points) {
   // points: [{ id, label, vec: Float32Array, kind, _score? }]
+  if (!points.length) {
+    return { points, explainedVariance: [0, 0] };
+  }
+
   const X = points.map((p) => Array.from(p.vec));
   const pca = new PCA(X, { center: true, scale: false });
-  const Y = pca.predict(X, { nComponents: 2 }).to2DArray();
+  let Y = [];
+  try {
+    Y = pca.predict(X, { nComponents: 2 }).to2DArray();
+  } catch (err) {
+    console.warn('[pca] projection failed, falling back to zeros:', err);
+    Y = X.map(() => [0, 0]);
+  }
   const ev = pca.getExplainedVariance();
+
   for (let i = 0; i < points.length; i++) {
-    points[i].x = Y[i][0];
-    points[i].y = Y[i][1];
+    const coords = Array.isArray(Y[i]) ? Y[i] : [];
+    const x = Number.isFinite(coords[0]) ? coords[0] : 0;
+    const y = Number.isFinite(coords[1]) ? coords[1] : 0;
+    points[i].x = x;
+    points[i].y = y;
     // keep z undefined (client will treat as 0), or set 0 explicitly
     // points[i].z = 0;
   }
+
   return { points, explainedVariance: [ev[0] || 0, ev[1] || 0] };
 }
 
