@@ -267,11 +267,52 @@ function drawChart(result) {
   const rangeY = maxY - minY;
   const rangeZ = maxZ - minZ;
   const maxRange = Math.max(rangeX, rangeY, rangeZ) || 1;
-  const scale = 1.8;
+  const scale = 2.4;
 
-  const smallGeom = new THREE.SphereGeometry(0.075, 24, 24);
-  const mediumGeom = new THREE.SphereGeometry(0.095, 28, 28);
-  const largeGeom = new THREE.SphereGeometry(0.12, 32, 32);
+  const smallGeom = new THREE.SphereGeometry(0.055, 24, 24);
+  const mediumGeom = new THREE.SphereGeometry(0.075, 28, 28);
+  const largeGeom = new THREE.SphereGeometry(0.095, 32, 32);
+
+  function createLabelSprite(text) {
+    const canvas = document.createElement('canvas');
+    const padding = 28;
+    const fontSize = 96;
+    const font = `${fontSize}px "Inter", "Segoe UI", sans-serif`;
+    const ctx2d = canvas.getContext('2d');
+    ctx2d.font = font;
+    const textWidth = Math.ceil(ctx2d.measureText(text).width);
+    const width = textWidth + padding * 2;
+    const height = fontSize + padding * 1.4;
+    canvas.width = width;
+    canvas.height = Math.ceil(height);
+
+    const ctxFinal = canvas.getContext('2d');
+    ctxFinal.font = font;
+    ctxFinal.textBaseline = 'middle';
+    ctxFinal.textAlign = 'left';
+    ctxFinal.fillStyle = 'rgba(15, 23, 42, 0.78)';
+    ctxFinal.fillRect(0, 0, canvas.width, canvas.height);
+    ctxFinal.fillStyle = '#f8fafc';
+    ctxFinal.fillText(text, padding, canvas.height / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false
+    });
+    const sprite = new THREE.Sprite(material);
+    const maxDim = Math.max(canvas.width, canvas.height) || 1;
+    const labelScale = 0.6;
+    sprite.scale.set(
+      (canvas.width / maxDim) * labelScale,
+      (canvas.height / maxDim) * labelScale,
+      1
+    );
+    return sprite;
+  }
 
   const idToObj = new Map();
   const pickables = [];
@@ -294,7 +335,7 @@ function drawChart(result) {
       ((p.z - centerZ) / maxRange) * scale
     );
 
-    const baseScale = p.kind === 'neighbor' ? 0.95 : (p.kind === 'predicted' ? 1.45 : 1.15);
+    const baseScale = p.kind === 'neighbor' ? 0.7 : (p.kind === 'predicted' ? 1.1 : 0.9);
     mesh.scale.setScalar(baseScale);
     mesh.userData = {
       label: p.label,
@@ -306,6 +347,10 @@ function drawChart(result) {
     ctx.group.add(mesh);
     pickables.push(mesh);
     idToObj.set(p.id, { mesh, position: mesh.position.clone() });
+
+    const label = createLabelSprite(p.label);
+    label.position.copy(mesh.position).add(new THREE.Vector3(baseScale * 0.28, baseScale * 0.12, 0));
+    ctx.group.add(label);
   });
 
   ctx.pickables = pickables;
