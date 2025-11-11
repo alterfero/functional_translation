@@ -34,6 +34,7 @@ const els = {
 
 let lastResult = null;
 let threeCtx = null;
+let statusRetryTimer = null;
 
 function parsePairs(text) {
   const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -356,9 +357,28 @@ function renderNeighborsTable(neighbors) {
   });
 }
 
-async function initStatus() {
-  const r = await fetch('/api/status').then(res => res.json());
-  els.status.textContent = `Model: ${r.model} • dim=${r.dim || '…'} • vocab=${r.vocabSize || 0}`;
+async function initStatus({ retry = true } = {}) {
+  if (statusRetryTimer) {
+    clearTimeout(statusRetryTimer);
+    statusRetryTimer = null;
+  }
+
+  try {
+    const resp = await fetch('/api/status');
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const r = await resp.json();
+    els.status.textContent = `Model: ${r.model} • dim=${r.dim || '…'} • vocab=${r.vocabSize || 0}`;
+    return true;
+  } catch (err) {
+    console.error('Status check failed:', err);
+    els.status.textContent = 'Waiting for server…';
+    if (retry) {
+      statusRetryTimer = setTimeout(() => initStatus({ retry: true }), 2000);
+    }
+    return false;
+  }
 }
 
 async function rebuildCache() {
