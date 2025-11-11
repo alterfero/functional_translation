@@ -182,7 +182,7 @@ function ensureThreeContext() {
       ctx.hovered = obj;
       const baseScale = obj.userData.baseScale || obj.scale.x;
       obj.userData.baseScale = baseScale;
-      obj.scale.setScalar(baseScale * 1.35);
+      obj.scale.setScalar(baseScale * 10);
 
       const { label, kind, score } = obj.userData;
       const kindLabel = KIND_LABELS[kind] || kind;
@@ -275,14 +275,14 @@ function drawChart(result) {
 
   function createLabelSprite(text) {
     const canvas = document.createElement('canvas');
-    const padding = 28;
-    const fontSize = 96;
+    const padding = 5;
+    const fontSize = 36;
     const font = `${fontSize}px "Inter", "Segoe UI", sans-serif`;
     const ctx2d = canvas.getContext('2d');
     ctx2d.font = font;
     const textWidth = Math.ceil(ctx2d.measureText(text).width);
     const width = textWidth + padding * 2;
-    const height = fontSize + padding * 1.4;
+    const height = fontSize + padding * 1;
     canvas.width = width;
     canvas.height = Math.ceil(height);
 
@@ -290,10 +290,10 @@ function drawChart(result) {
     ctxFinal.font = font;
     ctxFinal.textBaseline = 'middle';
     ctxFinal.textAlign = 'left';
-    ctxFinal.fillStyle = 'rgba(15, 23, 42, 0.78)';
+    ctxFinal.fillStyle = 'rgba(15, 23, 42, 0.2)';
     ctxFinal.fillRect(0, 0, canvas.width, canvas.height);
     ctxFinal.fillStyle = '#f8fafc';
-    ctxFinal.fillText(text, padding, canvas.height / 2);
+    ctxFinal.fillText(text, padding, canvas.height / 3);
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.needsUpdate = true;
