@@ -6,8 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>">
-  <!-- D3 + compromise (POS tagger) from CDNs -->
-  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <!-- compromise (POS tagger) from CDN -->
   <script src="https://cdn.jsdelivr.net/npm/compromise@14.13.0/builds/compromise.min.js"></script>
 </head>
 <body>
@@ -70,11 +69,13 @@ write, writing</textarea>
   <section class="viz">
     <div id="chart"></div>
     <div id="legend">
-      <span class="dot neighbor"></span> Neighbors
-      <span class="dot target"></span> Target
-      <span class="dot predicted"></span> Predicted
-      <span class="dot seedFrom"></span> Seed from
-      <span class="dot seedTo"></span> Seed to
+      <div class="legend-item"><span class="legend-dot neighbor"></span> Neighbors</div>
+      <div class="legend-item"><span class="legend-dot target"></span> Target</div>
+      <div class="legend-item"><span class="legend-dot predicted"></span> Predicted</div>
+      <div class="legend-item"><span class="legend-dot seedFrom"></span> Seed from</div>
+      <div class="legend-item"><span class="legend-dot seedTo"></span> Seed to</div>
+      <div class="legend-item"><span class="legend-line seed"></span> Seed vectors</div>
+      <div class="legend-item"><span class="legend-line translation"></span> Target translation</div>
     </div>
   </section>
 
