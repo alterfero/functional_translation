@@ -229,16 +229,28 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
 }
 
-section.viz {
+section.output {
+  display: grid;
+  gap: clamp(20px, 4vw, 36px);
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+  padding: 0 clamp(16px, 5vw, 72px) clamp(32px, 6vw, 64px);
+}
+
+.viz-card,
+.results-card {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 18px;
-  padding: 0 clamp(16px, 5vw, 72px);
+}
+
+.viz-card {
+  align-items: center;
 }
 
 #chart {
-  width: min(80vw, 640px);
+  width: 100%;
+  max-width: 640px;
   aspect-ratio: 1 / 1;
   position: relative;
   background: var(--surface);
@@ -326,11 +338,7 @@ section.viz {
 .legend-line.seed { background: var(--seedVector); }
 .legend-line.translation { background: linear-gradient(90deg, var(--target), var(--pred)); }
 
-section.results {
-  padding: clamp(32px, 6vw, 64px);
-}
-
-section.results h2 {
+.results-card h2 {
   margin: 0 0 16px;
   font-size: 1.5rem;
 }
@@ -383,8 +391,12 @@ footer {
     grid-template-columns: 1fr;
   }
 
+  section.output {
+    grid-template-columns: 1fr;
+  }
+
   #chart {
-    width: min(90vw, 560px);
+    max-width: min(100%, 560px);
   }
 }
 
