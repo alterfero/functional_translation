@@ -6,8 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22/>">
-  <!-- compromise (POS tagger) from CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/compromise@14.13.0/builds/compromise.min.js"></script>
   <script type="importmap">
     {
       "imports": {
@@ -62,13 +60,13 @@ fight, fighting
     <div class="panel">
       <label>Filter by Part of Speech</label>
       <div class="checkboxes">
-        <label><input type="checkbox" class="pos" value="Noun" checked /> Nouns</label>
-        <label><input type="checkbox" class="pos" value="Verb" checked /> Verbs</label>
-        <label><input type="checkbox" class="pos" value="Adjective" checked /> Adjectives</label>
-        <label><input type="checkbox" class="pos" value="Adverb" checked /> Adverbs</label>
-        <label><input type="checkbox" class="pos" value="Other" checked /> Other</label>
+        <label><input type="checkbox" class="pos" value="noun" checked /> Nouns</label>
+        <label><input type="checkbox" class="pos" value="verb" checked /> Verbs</label>
+        <label><input type="checkbox" class="pos" value="adjective" checked /> Adjectives</label>
+        <label><input type="checkbox" class="pos" value="adverb" checked /> Adverbs</label>
+        <label><input type="checkbox" class="pos" value="other" checked /> Other</label>
       </div>
-      <small>POS is heuristic (single-word guess via compromise.js).</small>
+      <small>POS metadata comes from WordNet lemmas in the vocabulary.</small>
     </div>
   </section>
 

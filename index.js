@@ -26,9 +26,10 @@ await fs.ensureDir(DATA_DIR);
 
 // --- Globals (populated on boot) ---
 let embedder = null;         // @xenova/transformers pipeline
-let vocab = [];              // array of words
+let vocabEntries = [];       // array of { word, pos }
+let vocabWords = [];         // array of words (parallel to vocabEntries)
 let dim = 0;                 // embedding dimension (should be 384 here)
-let matrix = null;           // Float32Array, size vocab.length * dim (row-major)
+let matrix = null;           // Float32Array, size vocabEntries.length * dim (row-major)
 let normalized = false;      // whether matrix rows are unit-length
 
 // --- Helpers ---
@@ -57,6 +58,21 @@ function getRow(i) {
 function wordsToTexts(words, template = '{w}') {
   // Allow giving context like "I saw {w} yesterday."
   return words.map(w => (template.includes('{w}') ? template.replaceAll('{w}', w) : w));
+}
+
+function normalizePosTag(pos) {
+  if (!pos) return null;
+  const lower = String(pos).toLowerCase();
+  if (['n', 'noun'].includes(lower)) return 'noun';
+  if (['v', 'verb'].includes(lower)) return 'verb';
+  if (['a', 's', 'adj', 'adjective'].includes(lower)) return 'adjective';
+  if (['r', 'adv', 'adverb'].includes(lower)) return 'adverb';
+  if (!lower) return null;
+  return lower === 'other' ? 'other' : lower;
+}
+
+function posForSignature(entry) {
+  return entry.pos ? normalizePosTag(entry.pos) : null;
 }
 
 async function ensureEmbedder() {
@@ -111,30 +127,122 @@ async function loadVocab() {
   if (await fs.pathExists(VOCAB_PATH)) {
     const raw = await fs.readFile(VOCAB_PATH, 'utf8');
     const lines = raw.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
-    vocab = Array.from(new Set(lines)); // dedupe
+    const seen = new Set();
+    const entries = [];
+    for (const line of lines) {
+      const [wordPart, posPart] = line.split('\t');
+      const word = (wordPart || '').trim();
+      if (!word) continue;
+      const normalizedPos = posPart ? normalizePosTag(posPart.trim()) : null;
+      const key = `${word}::${normalizedPos || ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      entries.push({ word, pos: normalizedPos });
+    }
+    vocabEntries = entries;
   } else {
     // A tiny default vocabulary so things run even without a file.
-    vocab = [
-      'garden','gardening','belief','believing','fight','fighting',
-      'run','running','walk','walking','play','playing','think','thinking',
-      'write','writing','drive','driving','code','coding','swim','swimming',
-      'invent','inventing','create','creating','design','designing','build','building',
-      'teacher','student','pilot','sailor','engineer','scientist','company','market',
-      'product','prototype','research','energy','health','transportation','data','model',
-      'language','word','verb','noun','adjective','adverb','plural','past','future',
-      'fast','faster','fastest','smart','smarter','smartest','happy','happier','happiest',
-      'good','better','best','bad','worse','worst','large','larger','largest',
-      'dog','dogs','cat','cats','city','cities','child','children','mouse','mice'
+    vocabEntries = [
+      { word: 'garden', pos: 'noun' },
+      { word: 'gardening', pos: 'noun' },
+      { word: 'belief', pos: 'noun' },
+      { word: 'believing', pos: 'verb' },
+      { word: 'fight', pos: 'noun' },
+      { word: 'fighting', pos: 'noun' },
+      { word: 'run', pos: 'verb' },
+      { word: 'running', pos: 'verb' },
+      { word: 'walk', pos: 'verb' },
+      { word: 'walking', pos: 'verb' },
+      { word: 'play', pos: 'verb' },
+      { word: 'playing', pos: 'verb' },
+      { word: 'think', pos: 'verb' },
+      { word: 'thinking', pos: 'verb' },
+      { word: 'write', pos: 'verb' },
+      { word: 'writing', pos: 'noun' },
+      { word: 'drive', pos: 'verb' },
+      { word: 'driving', pos: 'verb' },
+      { word: 'code', pos: 'noun' },
+      { word: 'coding', pos: 'noun' },
+      { word: 'swim', pos: 'verb' },
+      { word: 'swimming', pos: 'noun' },
+      { word: 'invent', pos: 'verb' },
+      { word: 'inventing', pos: 'verb' },
+      { word: 'create', pos: 'verb' },
+      { word: 'creating', pos: 'verb' },
+      { word: 'design', pos: 'noun' },
+      { word: 'designing', pos: 'verb' },
+      { word: 'build', pos: 'verb' },
+      { word: 'building', pos: 'noun' },
+      { word: 'teacher', pos: 'noun' },
+      { word: 'student', pos: 'noun' },
+      { word: 'pilot', pos: 'noun' },
+      { word: 'sailor', pos: 'noun' },
+      { word: 'engineer', pos: 'noun' },
+      { word: 'scientist', pos: 'noun' },
+      { word: 'company', pos: 'noun' },
+      { word: 'market', pos: 'noun' },
+      { word: 'product', pos: 'noun' },
+      { word: 'prototype', pos: 'noun' },
+      { word: 'research', pos: 'noun' },
+      { word: 'energy', pos: 'noun' },
+      { word: 'health', pos: 'noun' },
+      { word: 'transportation', pos: 'noun' },
+      { word: 'data', pos: 'noun' },
+      { word: 'model', pos: 'noun' },
+      { word: 'language', pos: 'noun' },
+      { word: 'word', pos: 'noun' },
+      { word: 'verb', pos: 'noun' },
+      { word: 'noun', pos: 'noun' },
+      { word: 'adjective', pos: 'noun' },
+      { word: 'adverb', pos: 'noun' },
+      { word: 'plural', pos: 'noun' },
+      { word: 'past', pos: 'adjective' },
+      { word: 'future', pos: 'noun' },
+      { word: 'fast', pos: 'adjective' },
+      { word: 'faster', pos: 'adjective' },
+      { word: 'fastest', pos: 'adjective' },
+      { word: 'smart', pos: 'adjective' },
+      { word: 'smarter', pos: 'adjective' },
+      { word: 'smartest', pos: 'adjective' },
+      { word: 'happy', pos: 'adjective' },
+      { word: 'happier', pos: 'adjective' },
+      { word: 'happiest', pos: 'adjective' },
+      { word: 'good', pos: 'adjective' },
+      { word: 'better', pos: 'adjective' },
+      { word: 'best', pos: 'adjective' },
+      { word: 'bad', pos: 'adjective' },
+      { word: 'worse', pos: 'adjective' },
+      { word: 'worst', pos: 'adjective' },
+      { word: 'large', pos: 'adjective' },
+      { word: 'larger', pos: 'adjective' },
+      { word: 'largest', pos: 'adjective' },
+      { word: 'dog', pos: 'noun' },
+      { word: 'dogs', pos: 'noun' },
+      { word: 'cat', pos: 'noun' },
+      { word: 'cats', pos: 'noun' },
+      { word: 'city', pos: 'noun' },
+      { word: 'cities', pos: 'noun' },
+      { word: 'child', pos: 'noun' },
+      { word: 'children', pos: 'noun' },
+      { word: 'mouse', pos: 'noun' },
+      { word: 'mice', pos: 'noun' }
     ];
   }
-  console.log(`[vocab] size=${vocab.length}`);
+
+  if (!vocabEntries.length) {
+    throw new Error('Vocabulary is empty.');
+  }
+
+  vocabWords = vocabEntries.map(entry => entry.word);
+  console.log(`[vocab] size=${vocabEntries.length}`);
 }
 
 async function buildOrLoadEmbeddingMatrix(contextTemplate = '{w}') {
   await loadVocab();
   await ensureEmbedder();
 
-  const signature = hashJSON({ model: MODEL_ID, dim, vocab, contextTemplate });
+  const vocabSignature = vocabEntries.map(entry => [entry.word, posForSignature(entry)]);
+  const signature = hashJSON({ model: MODEL_ID, dim, vocab: vocabSignature, contextTemplate });
   const metaPath = path.join(CACHE_DIR, 'meta.json');
   const binPath  = path.join(CACHE_DIR, 'vocab_embeddings.bin');
 
@@ -142,8 +250,7 @@ async function buildOrLoadEmbeddingMatrix(contextTemplate = '{w}') {
     const meta = JSON.parse(await fs.readFile(metaPath, 'utf8'));
     if (meta.signature === signature) {
       const buf = await fs.readFile(binPath);
-      const u8 = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
-      matrix = new Float32Array(u8.buffer, u8.byteOffset, u8.byteLength / 4);
+      matrix = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
       dim = meta.dim;
       normalized = meta.normalized;
       console.log(`[cache] loaded matrix n=${meta.n} dim=${dim} normalized=${normalized}`);
@@ -152,8 +259,8 @@ async function buildOrLoadEmbeddingMatrix(contextTemplate = '{w}') {
   }
 
   console.log('[cache] building vocab embedding matrix (first run or changed vocab/template)…');
-  const texts = wordsToTexts(vocab, contextTemplate);
-  const n = vocab.length;
+  const texts = wordsToTexts(vocabWords, contextTemplate);
+  const n = vocabEntries.length;
   matrix = new Float32Array(n * dim);
 
   for (let i = 0; i < n; i += BATCH_SIZE) {
@@ -174,15 +281,15 @@ async function buildOrLoadEmbeddingMatrix(contextTemplate = '{w}') {
   }
   normalized = true;
 
-  await fs.writeFile(binPath, Buffer.from(matrix.buffer));
-  await fs.writeFile(metaPath, JSON.stringify({ n: vocab.length, dim, normalized, signature }, null, 2));
+  await fs.writeFile(binPath, Buffer.from(matrix.buffer, matrix.byteOffset, matrix.byteLength));
+  await fs.writeFile(metaPath, JSON.stringify({ n: vocabEntries.length, dim, normalized, signature }, null, 2));
   console.log('[cache] matrix saved');
 }
 
 function topKSimilar(targetVec, k = DEFAULT_K, exclude = new Set()) {
   const q = normalized ? normalizeVec(targetVec) : targetVec;
-  const sims = new Float32Array(vocab.length);
-  for (let i = 0; i < vocab.length; i++) {
+  const sims = new Float32Array(vocabEntries.length);
+  for (let i = 0; i < vocabEntries.length; i++) {
     sims[i] = dot(getRow(i), q);
   }
   // build indices and partial sort
@@ -191,9 +298,10 @@ function topKSimilar(targetVec, k = DEFAULT_K, exclude = new Set()) {
 
   const res = [];
   for (const i of idxs) {
-    const w = vocab[i];
+    const entry = vocabEntries[i];
+    const w = entry.word;
     if (exclude.has(w)) continue;
-    res.push({ word: w, score: sims[i], index: i });
+    res.push({ word: w, pos: entry.pos || null, score: sims[i], index: i });
     if (res.length >= k) break;
   }
   return res;
@@ -233,7 +341,7 @@ app.get('/api/status', async (req, res) => {
     const ready = !!matrix;
     res.json({
       ready,
-      vocabSize: vocab.length || 0,
+      vocabSize: vocabEntries.length || 0,
       dim,
       model: MODEL_ID,
       cacheDir: CACHE_DIR
@@ -248,7 +356,7 @@ app.post('/api/rebuild', async (req, res) => {
   try {
     const { contextTemplate = '{w}' } = req.body || {};
     await buildOrLoadEmbeddingMatrix(contextTemplate);
-    res.json({ ok: true, vocabSize: vocab.length, dim, model: MODEL_ID });
+    res.json({ ok: true, vocabSize: vocabEntries.length, dim, model: MODEL_ID });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: String(e) });
@@ -317,10 +425,13 @@ app.post('/api/search', async (req, res) => {
 
     // neighbors
     for (const n of neighbors) {
+      const entry = vocabEntries[n.index];
+      const neighborId = `neighbor:${n.index}`;
       pPoints.push({
-        id: `neighbor:${n.word}`,
-        label: n.word,
+        id: neighborId,
+        label: entry.word,
         kind: 'neighbor',
+        pos: entry.pos || null,
         vec: getRow(n.index)
       });
     }
@@ -371,18 +482,19 @@ app.post('/api/search', async (req, res) => {
       } : null
     }));
 
-    const neighborScoreMap = new Map(neighbors.map(n => [`neighbor:${n.word}`, n.score]));
+    const neighborScoreMap = new Map(neighbors.map(n => [`neighbor:${n.index}`, n.score]));
 
     res.json({
       avgDelta: Array.from(avgDelta),
       targetEmbedding: Array.from(targetEmb),
       transformed: Array.from(translated),
       transformedRaw: Array.from(transformed),
-      neighbors: neighbors.map(n => ({ word: n.word, score: n.score })),
+      neighbors: neighbors.map(n => ({ word: n.word, pos: n.pos || null, score: n.score })),
       points: points.map(p => ({
         id: p.id,
         label: p.label,
         kind: p.kind,
+        pos: p.pos || null,
         x: p.x,
         y: p.y,
         z: p.z || 0,
@@ -391,7 +503,7 @@ app.post('/api/search', async (req, res) => {
       seedLinks: enrichedSeedLinks,
       explainedVariance,
       meta: {
-        vocabSize: vocab.length,
+        vocabSize: vocabEntries.length,
         dim,
         model: MODEL_ID,
         k
