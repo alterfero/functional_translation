@@ -56,9 +56,41 @@ function classifyPOS(word) {
   return 'Other';
 }
 
+function resolvePos(posValue, fallbackWord) {
+  const result = new Set();
+
+  if (Array.isArray(posValue)) {
+    posValue.filter(Boolean).forEach(p => result.add(p));
+  } else if (typeof posValue === 'string' && posValue.trim()) {
+    posValue
+      .split(',')
+      .map(x => x.trim())
+      .filter(Boolean)
+      .forEach(p => result.add(p));
+  }
+
+  if (!result.size && fallbackWord) {
+    const fallback = classifyPOS(fallbackWord);
+    if (fallback) {
+      result.add(fallback);
+    }
+  }
+
+  if (!result.size) {
+    result.add('Other');
+  }
+
+  return Array.from(result);
+}
+
 function posFilterActive() {
   const keeps = new Set(els.posChecks.filter(c => c.checked).map(c => c.value));
-  return pos => keeps.has(pos);
+  return posList => {
+    if (!Array.isArray(posList) || !posList.length) {
+      return keeps.has('Other');
+    }
+    return posList.some(pos => keeps.has(pos));
+  };
 }
 
 function getCssVar(name) {
@@ -226,8 +258,8 @@ function drawChart(result) {
   const keep = posFilterActive();
   const filteredPoints = result.points.filter(p => {
     if (p.kind !== 'neighbor') return true;
-    const pos = classifyPOS(p.label);
-    return keep(pos);
+    const posList = resolvePos(p.pos, p.label);
+    return keep(posList);
   });
 
   ctx.tooltip.style.opacity = 0;
@@ -391,13 +423,16 @@ function drawChart(result) {
 function renderNeighborsTable(neighbors) {
   const keep = posFilterActive();
   const rows = neighbors
-    .map((n, i) => ({ ...n, pos: classifyPOS(n.word) }))
-    .filter(n => keep(n.pos));
+    .map((n, i) => {
+      const posList = resolvePos(n.pos, n.word);
+      return { ...n, posList, posLabel: posList.join(', ') };
+    })
+    .filter(n => keep(n.posList));
 
   els.tableBody.innerHTML = '';
   rows.forEach((n, i) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${i + 1}</td><td>${n.word}</td><td>${n.score.toFixed(4)}</td><td><span class="badge">${n.pos}</span></td>`;
+    tr.innerHTML = `<td>${i + 1}</td><td>${n.word}</td><td>${n.score.toFixed(4)}</td><td><span class="badge">${n.posLabel}</span></td>`;
     els.tableBody.appendChild(tr);
   });
 }
