@@ -16,6 +16,14 @@ const KIND_LABELS = {
   seedTo: 'Seed (to)'
 };
 
+const POS_LABELS = {
+  noun: 'Noun',
+  verb: 'Verb',
+  adjective: 'Adjective',
+  adverb: 'Adverb',
+  other: 'Other',
+};
+
 const els = {
   status: document.getElementById('status'),
   pairs: document.getElementById('pairs'),
@@ -47,13 +55,20 @@ function parsePairs(text) {
   }).filter(Boolean);
 }
 
-function classifyPOS(word) {
-  const doc = window.nlp(word);
-  if (doc.nouns().out('array').includes(word)) return 'Noun';
-  if (doc.verbs().out('array').includes(word)) return 'Verb';
-  if (doc.adjectives().out('array').includes(word)) return 'Adjective';
-  if (doc.adverbs().out('array').includes(word)) return 'Adverb';
-  return 'Other';
+function normalizePOS(pos) {
+  if (!pos) return 'other';
+  const lower = String(pos).toLowerCase();
+  if (POS_LABELS[lower]) return lower;
+  if (lower === 'adj') return 'adjective';
+  if (lower === 'adv') return 'adverb';
+  if (lower === 'n') return 'noun';
+  if (lower === 'v') return 'verb';
+  return 'other';
+}
+
+function formatPOS(pos) {
+  const norm = normalizePOS(pos);
+  return POS_LABELS[norm] || POS_LABELS.other;
 }
 
 function posFilterActive() {
@@ -187,6 +202,9 @@ function ensureThreeContext() {
       const { label, kind, score } = obj.userData;
       const kindLabel = KIND_LABELS[kind] || kind;
       let html = `<strong>${label}</strong><br/><span class="badge">${kindLabel}</span>`;
+      if (obj.userData.pos) {
+        html += `<div>POS: ${obj.userData.pos}</div>`;
+      }
       if (typeof score === 'number') {
         html += `<div>cosine: ${score.toFixed(4)}</div>`;
       }
@@ -226,7 +244,7 @@ function drawChart(result) {
   const keep = posFilterActive();
   const filteredPoints = result.points.filter(p => {
     if (p.kind !== 'neighbor') return true;
-    const pos = classifyPOS(p.label);
+    const pos = normalizePOS(p.pos);
     return keep(pos);
   });
 
@@ -340,6 +358,7 @@ function drawChart(result) {
     mesh.userData = {
       label: p.label,
       kind: p.kind,
+      pos: p.kind === 'neighbor' ? formatPOS(p.pos) : null,
       score: typeof p.score === 'number' ? p.score : null,
       baseScale
     };
@@ -391,13 +410,18 @@ function drawChart(result) {
 function renderNeighborsTable(neighbors) {
   const keep = posFilterActive();
   const rows = neighbors
-    .map((n, i) => ({ ...n, pos: classifyPOS(n.word) }))
-    .filter(n => keep(n.pos));
+    .map((n, i) => ({
+      ...n,
+      normPos: normalizePOS(n.pos),
+      posLabel: formatPOS(n.pos),
+      rank: i + 1,
+    }))
+    .filter(n => keep(n.normPos));
 
   els.tableBody.innerHTML = '';
-  rows.forEach((n, i) => {
+  rows.forEach(n => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${i + 1}</td><td>${n.word}</td><td>${n.score.toFixed(4)}</td><td><span class="badge">${n.pos}</span></td>`;
+    tr.innerHTML = `<td>${n.rank}</td><td>${n.word}</td><td>${n.score.toFixed(4)}</td><td><span class="badge">${n.posLabel}</span></td>`;
     els.tableBody.appendChild(tr);
   });
 }
