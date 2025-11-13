@@ -27,6 +27,7 @@ await fs.ensureDir(DATA_DIR);
 // --- Globals (populated on boot) ---
 let embedder = null;         // @xenova/transformers pipeline
 let vocab = [];              // array of words
+let wordToPos = new Map();   // Map word -> array of POS labels
 let dim = 0;                 // embedding dimension (should be 384 here)
 let matrix = null;           // Float32Array, size vocab.length * dim (row-major)
 let normalized = false;      // whether matrix rows are unit-length
@@ -107,14 +108,61 @@ async function embedMany(texts) {
   return res;
 }
 
+function parsePosString(rawPos) {
+  if (!rawPos) return [];
+  if (Array.isArray(rawPos)) return rawPos.filter(Boolean);
+  return rawPos
+    .split(',')
+    .map(x => x.trim())
+    .filter(Boolean);
+}
+
+function getPosForWord(word) {
+  if (!wordToPos.has(word)) return [];
+  const value = wordToPos.get(word);
+  return Array.isArray(value) ? value : [];
+}
+
 async function loadVocab() {
+  wordToPos = new Map();
+  const words = [];
+  const seen = new Set();
+
   if (await fs.pathExists(VOCAB_PATH)) {
     const raw = await fs.readFile(VOCAB_PATH, 'utf8');
     const lines = raw.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
-    vocab = Array.from(new Set(lines)); // dedupe
+    for (const line of lines) {
+      let wordPart = line;
+      let posPart = '';
+
+      if (line.includes('\t')) {
+        const [w, p] = line.split('\t');
+        wordPart = (w || '').trim();
+        posPart = (p || '').trim();
+      } else if (line.includes('|')) {
+        const [w, p] = line.split('|');
+        wordPart = (w || '').trim();
+        posPart = (p || '').trim();
+      }
+
+      const word = wordPart.trim();
+      if (!word) continue;
+
+      if (!seen.has(word)) {
+        words.push(word);
+        seen.add(word);
+      }
+
+      const existing = wordToPos.get(word) || [];
+      const merged = new Set(existing);
+      for (const tag of parsePosString(posPart)) {
+        merged.add(tag);
+      }
+      wordToPos.set(word, Array.from(merged));
+    }
   } else {
     // A tiny default vocabulary so things run even without a file.
-    vocab = [
+    for (const word of [
       'garden','gardening','belief','believing','fight','fighting',
       'run','running','walk','walking','play','playing','think','thinking',
       'write','writing','drive','driving','code','coding','swim','swimming',
@@ -125,8 +173,25 @@ async function loadVocab() {
       'fast','faster','fastest','smart','smarter','smartest','happy','happier','happiest',
       'good','better','best','bad','worse','worst','large','larger','largest',
       'dog','dogs','cat','cats','city','cities','child','children','mouse','mice'
-    ];
+    ]) {
+      if (!seen.has(word)) {
+        words.push(word);
+        seen.add(word);
+      }
+      if (!wordToPos.has(word)) {
+        wordToPos.set(word, ['Other']);
+      }
+    }
   }
+
+  // Ensure every word has at least one POS entry for downstream use.
+  for (const word of words) {
+    if (!wordToPos.has(word) || !getPosForWord(word).length) {
+      wordToPos.set(word, ['Other']);
+    }
+  }
+
+  vocab = words;
   console.log(`[vocab] size=${vocab.length}`);
 }
 
@@ -193,7 +258,7 @@ function topKSimilar(targetVec, k = DEFAULT_K, exclude = new Set()) {
   for (const i of idxs) {
     const w = vocab[i];
     if (exclude.has(w)) continue;
-    res.push({ word: w, score: sims[i], index: i });
+    res.push({ word: w, score: sims[i], index: i, pos: getPosForWord(w) });
     if (res.length >= k) break;
   }
   return res;
@@ -321,7 +386,8 @@ app.post('/api/search', async (req, res) => {
         id: `neighbor:${n.word}`,
         label: n.word,
         kind: 'neighbor',
-        vec: getRow(n.index)
+        vec: getRow(n.index),
+        pos: Array.isArray(n.pos) ? n.pos : getPosForWord(n.word)
       });
     }
 
@@ -378,7 +444,11 @@ app.post('/api/search', async (req, res) => {
       targetEmbedding: Array.from(targetEmb),
       transformed: Array.from(translated),
       transformedRaw: Array.from(transformed),
-      neighbors: neighbors.map(n => ({ word: n.word, score: n.score })),
+      neighbors: neighbors.map(n => ({
+        word: n.word,
+        score: n.score,
+        pos: Array.isArray(n.pos) ? n.pos : getPosForWord(n.word)
+      })),
       points: points.map(p => ({
         id: p.id,
         label: p.label,
@@ -386,7 +456,8 @@ app.post('/api/search', async (req, res) => {
         x: p.x,
         y: p.y,
         z: p.z || 0,
-        score: neighborScoreMap.get(p.id) || null
+        score: neighborScoreMap.get(p.id) || null,
+        pos: Array.isArray(p.pos) ? p.pos : (p.kind === 'neighbor' ? getPosForWord(p.label) : [])
       })),
       seedLinks: enrichedSeedLinks,
       explainedVariance,
